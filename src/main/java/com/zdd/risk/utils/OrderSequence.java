@@ -55,6 +55,21 @@ public class OrderSequence extends Thread {
 		orderNum ++;
 		long orderNo=str * 100000;
 		orderNo += orderNum ;
+		System.out.println("随机生成的applyId为："+orderNo);
+		return orderNo ;
+	}
+
+
+	/**
+	 * 生成订单编号
+	 * @return
+	 */
+	public static synchronized long getOrderNo2() {
+
+		long str =System.currentTimeMillis();
+		orderNum ++;
+		long orderNo=str * 1000;
+		orderNo += orderNum ;
 		System.out.println("随机生成的bizno为："+orderNo);
 		return orderNo ;
 	}

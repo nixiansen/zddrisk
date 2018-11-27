@@ -186,3 +186,5 @@ alter TABLE risk_accredit modify  COLUMN taskId varchar(50)  COMMENT "第三方�
 alter TABLE risk_applyamount modify  COLUMN modelNo varchar(100)  COMMENT "规格/型号（租赁场景）";
 
 
+--=============================2018-11-27修改表类型=======================
+ALTER TABLE risk_certificationuserinfo ADD COLUMN addressBook mediumtext COMMENT "通讯录" ;

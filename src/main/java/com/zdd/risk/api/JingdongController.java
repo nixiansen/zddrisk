@@ -1,22 +1,26 @@
 package com.zdd.risk.api;
 
+import ch.qos.logback.core.net.SyslogOutputStream;
 import com.alibaba.fastjson.JSONObject;
 import com.zdd.risk.bean.*;
 import com.zdd.risk.dao.IAccreditDAO;
 import com.zdd.risk.dao.IApplyAmountDAO;
 import com.zdd.risk.dao.IApproveResultDAO;
 import com.zdd.risk.dao.ICertificationUserInfoDAO;
-import com.zdd.risk.utils.*;
+import com.zdd.risk.service.JingDongService;
+import com.zdd.risk.utils.Base64Utils;
+import com.zdd.risk.utils.HttpUtils;
+import com.zdd.risk.utils.OrderSequence;
+import com.zdd.risk.utils.RSAUtils;
 import io.swagger.annotations.ApiOperation;
 import org.apache.commons.lang.StringUtils;
+import org.apache.http.client.utils.HttpClientUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.PropertySource;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 
 import java.security.PublicKey;
 import java.util.Date;
@@ -62,6 +66,9 @@ public class JingdongController {
     @Value("${APIurl}")
     String APIurl;
 
+    @Value("${tobizurl}")
+    String tobizurl;
+
 
     private static final Logger log = LoggerFactory.getLogger(JingdongController.class);
 
@@ -83,63 +90,80 @@ public class JingdongController {
     @Autowired
     private Base64Utils base64Utils;
 
+    @Autowired
+    private JingDongService jingDongService;
+
+
+    public String getBizNo1() {
+        return bizNo1;
+    }
+
+    public void setBizNo1(String bizNo1) {
+        this.bizNo1 = bizNo1;
+    }
+
+    public static String bizNo1;
+
 
     @ApiOperation("3.1请求ZRobot风控服务接口")
     @RequestMapping(value = "/approve")
     public JSONObject approve(@RequestBody String param) {
-
         log.info("获取请求ZRobot风控服务接口接口入参 param= " + param);
-
         Map reMap = new HashMap();
         reMap.put("code", "100000");
         reMap.put("codeMsg", "操作成功！");
 
-
 //        JSONObject result = new JSONObject();
         JSONObject params = JSONObject.parseObject(param);
+        params.put("uid", params.getString("userId"));
         params.put("orgCode", orgCode);
-        params.put("appId", appId);
         params.put("appId", appId);
         params.put("version", version);
         params.put("appKey", appKey);
         params.put("approveResult", approveResult);
 
-
-
+        //查询applyId
+        long applyId1 = orderSequence.getOrderNo1();
+        String applyId = applyId1 + "";
+        params.put("applyId", applyId);
 
 
         //查询bizNo
         long bizno1 = orderSequence.getOrderNo1();
         String bizNo = bizno1 + "";
         params.put("bizNo", bizNo);
+        JingdongController jingdong = new JingdongController();
+        jingdong.setBizNo1(bizNo);
+
+        String productId = params.getString("productId");
+
+        if (productId.equals("1")) {
+            params.put("productId", "creditRentForCollege");
+
+        } else if (productId.equals("2")) {
+            params.put("productId", "creditRentForSalaryman");
+        } else {
+            reMap.put("code", "2");
+            reMap.put("codeMsg", "请选择productId（1,2）");
+//需要加一个异常类
+            log.info("请选择productId（1,2）");
+            return new JSONObject(reMap);
+        }
 
         JSONObject database1 = new JSONObject();
         database1.put("getApplyAmount", getApplyAmount);
         database1.put("getBaseInfo", getBaseInfo);
         params.put("database", database1.toJSONString());
 
-        JSONObject database2 = new JSONObject();
-        database2.put("getTaobaoInfo", "4787959537775966181");
-        database2.put("getTaobaoReport", "4787959537775966181");
-        params.put("dataTaskId", database2.toJSONString());
-
-
-        System.out.println(params.toJSONString());
-
-        System.out.println(APIurl);
-
+        //查询taskId
+        JSONObject resultat = jingDongService.selectAccreditTaskId(params.getString("userId"), productId);
+        params.put("dataTaskId", resultat.toJSONString());
+        log.info("AccreditTaskId查询结果：" + resultat);
+        log.info("调用京东风控策略接口传入参数信息 ：" + params);
         //调用京东风控策略接口
         HttpUtils http = new HttpUtils();
         String result = http.post(APIurl, params.toJSONString());
-
-        System.out.println("======================:" + result);
-
-//        if(a!=1){
-//            reMap.put("code", "0");
-//            reMap.put("codeMsg", "操作失败！");
-//        }
-//
-//        System.out.println(a);
+        log.info("调用京东风控策略接口返回信息 result= " + result);
         //TODO
         //回调业务系统
         return new JSONObject(reMap);
@@ -148,228 +172,232 @@ public class JingdongController {
 
     @ApiOperation("3.2ZRobot风控审批结果回调接口")
     @RequestMapping(value = "/approveResultFromZRobot")
-   // public JSONObject approveResultFromZRobot() {
-
-        public JSONObject approveResultFromZRobot(@RequestBody String param) {
-        log.info("获取ZRobot风控审批结果回调接口入参 param= ");
+    public JSONObject approveResultFromZRobot(@RequestBody String param) {
+        log.info("获取ZRobot风控审批结果回调接口入参 param= " + param);
         Map reMap = new HashMap();
-        reMap.put("code", "100000");
-        reMap.put("codeMsg", "操作成功！");
-
-        JSONObject  params = JSONObject.parseObject(param);
-
-        //测试数据
-        JSONObject jsonObject = new JSONObject();
-        jsonObject.put("bizno", "1233");
-        jsonObject.put("userId", "1233");
-        jsonObject.put("applyid", "1233");
-        jsonObject.put("payindex", "1");
-        jsonObject.put("approveresult", "1233");
-        jsonObject.put("approveCredit", "1233");
-        jsonObject.put("approveAPR", "1233");
-        jsonObject.put("approveDPR", "1");
-
-
+        reMap.put("success", "true");
+        JSONObject params = JSONObject.parseObject(param);
+        params.put("approveCredit", params.getInteger("approveCredit") * 100);
+        params.put("userId", params.getString("uid"));
         //insert DB
         ApproveResult record = params.toJavaObject(ApproveResult.class);
         record.setCreateTime(new Date());
-        log.info(JSONObject.toJSONString(record));
+        log.info("往risk_approveResult表插入数据参数 param1= " + JSONObject.toJSONString(record));
         int a = approveResultDAO.insert(record);
-
         if (a != 1) {
-            reMap.put("code", "0");
-            reMap.put("codeMsg", "操作失败！");
+            reMap.put("success", "false");
+        } else {
+            resultApproveToZRobot(params.getString("userId"));
         }
-
-        System.out.println(a);
         //TODO
         //回调业务系统
         return new JSONObject(reMap);
     }
 
 
-    @ApiOperation("3.3授权额度回调接口")
+    @ApiOperation("3.3返回ZRobot风控服务回调接口")
     @RequestMapping(value = "/resultApproveToZRobot")
-//    public JSONObject resultApproveToZRobot() {
-
-    public String resultApproveToZRobot(@RequestBody String param) {
-        log.info("获取ZRobot风控审批结果回调接口入参 param= " + param);
-        Map reMap = new HashMap();
-        reMap.put("code", "100000");
-        reMap.put("codeMsg", "操作成功！");
-
-
+    public void resultApproveToZRobot(@RequestBody String userId) {
+        log.info("返回ZRobot风控服务回调接口入参 userId= " + userId);
         JSONObject jsonObject = new JSONObject();
         //测试数据
-        jsonObject.put("bizno", "1233");
-        jsonObject.put("userid", "1233");
-        jsonObject.put("applyid", "1233");
+        jsonObject.put("bizNo", "");
+        jsonObject.put("userId", userId);
+        jsonObject.put("payIndex", "");
+        jsonObject.put("approveResult", "");
+        jsonObject.put("approveCredit", "");
+        jsonObject.put("approveAPR", "");
+        jsonObject.put("approveDPR", "");
+        jsonObject.put("minLoanTerm", "");
+        jsonObject.put("maxLoanTerm", "");
+        jsonObject.put("refuseCode", "");
+        jsonObject.put("refuseReason", "");
+        jsonObject.put("approveTime", "");
 
-        ApproveResultExample example = new ApproveResultExample();
-        ApproveResultExample.Criteria criteria = example.createCriteria();
-        criteria.andUserIdEqualTo(jsonObject.getString("userid"));
+        //通过userID查询数据
+//        ApproveResultExample example = new ApproveResultExample();
+//        ApproveResultExample.Criteria criteria = example.createCriteria();
+//        criteria.andUserIdEqualTo(userId);
         //通过userID查询申请额度信息
-        List<ApproveResult> approveResute1 = approveResultDAO.selectByExample(example);
+      //  List<ApproveResult> approveResute1 = approveResultDAO.selectByExample(example);
 
-        JSONObject result = new JSONObject();
+        List<ApproveResult> approveResute1=jingDongService.selectByExample(userId);
 
+        System.out.println(jsonObject.toJSONString(approveResute1));
+        if (approveResute1.size() != 0) {
+            System.out.println(approveResute1.size());
+            String a = StringUtils.strip(jsonObject.toJSONString(approveResute1.get(approveResute1.size()-1)), "[]");
+            jsonObject = JSONObject.parseObject(a);
+        }
+//        JSONObject result= JSONObject.parseObject(jsonObject.toJSONString());
+       // result1.put("result",jsonObject);
 
-        System.out.println(result.toJSONString(approveResute1));
+        Map<String,JSONObject> map=new HashMap<String,JSONObject>();
+        map.put("result",jsonObject);
 
-        return result.toJSONString(approveResute1);
+//        log.info("回调业务部门的接口传入参数信息 ：" + jsonObject);
+        log.info("回调业务部门的接口传入参数信息 ：" + map.toString());
+        //回调业务部门的接口
+        HttpUtils http = new HttpUtils();
+        String result1 = http.doPostHttp1(tobizurl, map);
+        log.info("回调业务部门的接口返回信息 result= " + result1);
     }
 
-/*
-    @ApiOperation("4.0用户申请额度及其基本信息的存储")
-    @RequestMapping(value = "/insertApplyAmountAndBaseInfo")
-    public JSONObject insertApplyAmountAndBaseInfo(@RequestBody String param) {
-        // public JSONObject insertApplyAmountAndBaseInfo() {
-        log.info("获取用户申请额度接口入参 uid= " + param);
-
-        Map reMap = new HashMap();
-        reMap.put("code", "100000");
-        reMap.put("codeMsg", "操作成功！");
-
-        JSONObject jsonObject = new JSONObject();
-        //测试数据
-        jsonObject.put("userid", "1");
-        jsonObject.put("modelno", "1");
-        jsonObject.put("applyamount", "100");
-        jsonObject.put("applydays", "10");
-        jsonObject.put("addressPermanent", "北京");
-        jsonObject.put("age", "13");
-
-        System.out.println("#######################################");
-
-        ApplyAmount record = jsonObject.toJavaObject(ApplyAmount.class);
-        log.info(JSONObject.toJSONString(record));
-        int a = applyAmountDAO.insert(record);
-        CertificationUserInfo record1 = jsonObject.toJavaObject(CertificationUserInfo.class);
-        log.info(JSONObject.toJSONString(record1));
-        int a1 = certificationUserInfoDAO.insert(record1);
-        System.out.println(a);
-        if (a != 1) {
-            reMap.put("code", "0");
-            reMap.put("codeMsg", "操作失败！");
-        }
-        return new JSONObject(reMap);
-    }*/
-
-
     @ApiOperation("4.1获取用户申请额度接口")
-    @RequestMapping(value = "/getApplyAmountFromZDD")
-    public String getApplyAmountFromZDD(@RequestBody String uid) {
-
-        log.info("获取用户授权信息数据接口入参 param= " + uid);
+    @RequestMapping(value = "/getApplyAmountFromZDD", method = RequestMethod.GET)
+    public String getApplyAmountFromZDD(@RequestParam("uid") String uid) {
+        log.info("获取用户授权信息数据接口入参 uid= " + uid);
 
         JSONObject params = new JSONObject();
-        JSONObject jsonObject = new JSONObject();
-//        //测试数据
-        jsonObject.put("uid", uid);
+
+        JingdongController jingdong = new JingdongController();
+        String bizNo2 = jingdong.getBizNo1();
+
+        //初始化返回参数
+        JSONObject data = new JSONObject();
+        data.put("uid", uid);
+        data.put("applyAmount", "1000");
+        data.put("applyDays", "30");
+        data.put("applyMonths", "12");
+        data.put("contractAmount", "5000");
+        data.put("modelNo", "iPhone 7s 银色/128G");
+        data.put("bizNo", bizNo2);
 
         //select DB
-        ApplyAmountExample example = new ApplyAmountExample();
+/*        ApplyAmountExample example = new ApplyAmountExample();
         ApplyAmountExample.Criteria criteria = example.createCriteria();
-        criteria.andUserIdEqualTo(jsonObject.getString("uid"));
+        criteria.andUserIdEqualTo(uid);*/
         //通过userID查询申请额度信息
-        List<ApplyAmount> applyamountlist = applyAmountDAO.selectByExample(example);
-
-
+//        List<ApplyAmount> applyamountlist = applyAmountDAO.selectByExample(example);
+//        System.out.println("集合大小=================" + applyamountlist.size());
+/*
         if (applyamountlist.size() == 0) {
             params.put("success", "fails");
             params.put("errorCode", "查询成功");
             params.put("errorMessage", "没有数据！");
-        }else {
+            try {
+                //对data数据进行加密
+                byte[] publicEncrypt = rsaUtils.encryptByPublicKey(data.toJSONString().getBytes("UTF-8"), appSecret);
+                String pb = new String(publicEncrypt, "UTF-8");
+                String byte2Base64 = base64Utils.encode(publicEncrypt);
+                params.put("data", byte2Base64);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        } else {
             JSONObject result = new JSONObject();
-
-            System.out.println(applyamountlist.size());
-
-            String a = StringUtils.strip(result.toJSONString(applyamountlist.get(0)), "[]");
-
-            result.put("data",a);
-
+            String alist = StringUtils.strip(result.toJSONString(applyamountlist.get(0)), "[]");
+//            System.out.println("alist为=================：" + alist);
+            data = JSONObject.parseObject(alist);
+            data.put("bizNo", bizNo2);
+            int ac = Integer.parseInt(data.getString("applyAmount"));
+            data.put("applyAmount", ac / 100 + "");
+            result.put("data", data.toJSONString());
+            log.info("获取用户授权信息数据接口返回参数 params1= " + data);
             try {
                 byte[] publicEncrypt = rsaUtils.encryptByPublicKey(result.toJSONString().getBytes("UTF-8"), appSecret);
-
                 String pb = new String(publicEncrypt, "UTF-8");
-
-                System.out.println(new String(publicEncrypt, "UTF-8"));
-
-                params.put("data", pb);
-
+                String byte2Base64 = base64Utils.encode(publicEncrypt);
+                params.put("data", byte2Base64);
             } catch (Exception e) {
                 e.printStackTrace();
             }
             params.put("success", "true");
             params.put("errorCode", "");
             params.put("errorMessage", "");
-
+        }*/
+        try {
+            byte[] publicEncrypt = rsaUtils.encryptByPublicKey(data.toJSONString().getBytes("UTF-8"), appSecret);
+            String pb = new String(publicEncrypt, "UTF-8");
+            String byte2Base64 = base64Utils.encode(publicEncrypt);
+            params.put("data", byte2Base64);
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-
-System.out.println("==========================================="+params.toJSONString());
-
-
-        return  params.toJSONString();
+        params.put("success", "true");
+        params.put("errorCode", "");
+        params.put("errorMessage", "");
+        log.info("用户授权信息返回数据加密参数 params= " + params);
+        return params.toJSONString();
 
     }
 
     @ApiOperation("4.2获取用户基本信息数据接口")
-    @RequestMapping(value = "/getBaseInfoFromZDD")
-//    public String getBaseInfoFromZDD() {
-    public String getBaseInfoFromZDD(@RequestBody String uid) {
+    @RequestMapping(value = "/getBaseInfoFromZDD", method = RequestMethod.GET)
+    public String getBaseInfoFromZDD(@RequestParam("uid") String uid) {
         log.info("获取用户基本信息数据接口入参 uid= " + uid);
 
-
-
         JSONObject params = new JSONObject();
-        JSONObject jsonObject = new JSONObject();
-//        //测试数据
-        jsonObject.put("uid", uid);
+        params.put("uid", uid);
 
-        //JSONObject params = JSONObject.parseObject(uid);
-
-
-//        JSONObject jsonObject = new JSONObject();
-//        //测试数据
-//        jsonObject.put("uid", "123");
-//        jsonObject.put("username", "宋发元");
-//
+        //初始化返回参数
+        JSONObject data = new JSONObject();
+        data.put("uid", uid);
+        data.put("mobile", "");
+        data.put("realName", "");
+        data.put("idCard", "");
+        data.put("nation", "");
+        data.put("age", "");
+        data.put("addressPermanent", "");
+        data.put("idCardValidDate", "");
+        data.put("maritalStatus", "");
+        data.put("education", "");
+        data.put("institution", "");
+        data.put("addressWork", "");
+        data.put("addressHome", "");
+        data.put("payday", "");
+        data.put("companyName", "");
+        data.put("companyPhone", "");
+        data.put("sosContactName", "");
+        data.put("sosContactRelation", "");
+        data.put("sosContactPhone", "");
+        data.put("sosContactName1", "");
+        data.put("sosContactRelation1", "");
+        data.put("sosContactPhone1", "");
+        data.put("lastLoginIp", "");
+        data.put("longitude", "");
+        data.put("latitude", "");
+        data.put("gpsAddress", "");
+        data.put("regOs", "");
+        data.put("regAppVersion", "");
+        data.put("regFrom", "");
+        data.put("regIp", "");
+        data.put("addressBook", "");
+        data.put("gpsHistory", "");
+        data.put("bankCard", "");
+        data.put("bankMobile", "");
 
         CertificationUserInfoExample example = new CertificationUserInfoExample();
         CertificationUserInfoExample.Criteria criteria = example.createCriteria();
-        criteria.andUserIdEqualTo(jsonObject.getString("uid"));
+        criteria.andUserIdEqualTo(uid);
         //通过userID查询用户基本信息数据
         List<CertificationUserInfo> certificationuserinfolist = certificationUserInfoDAO.selectByExample(example);
-
-//        JSONObject result = new JSONObject();
-//        System.out.println(result.toJSONString(certificationuserinfolist));
-//        return result.toJSONString(certificationuserinfolist);
-
-
-
+        System.out.println("集合大小================="+certificationuserinfolist.size());
         if (certificationuserinfolist.size() == 0) {
             params.put("success", "fails");
             params.put("errorCode", "查询失败");
             params.put("errorMessage", "没有数据！");
-        }else {
+            try {
+                byte[] publicEncrypt = rsaUtils.encryptByPublicKey(data.toJSONString().getBytes("UTF-8"), appSecret);
+                String byte2Base64 = base64Utils.encode(publicEncrypt);
+                params.put("data", byte2Base64);
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        } else {
             JSONObject result = new JSONObject();
 
-            System.out.println(certificationuserinfolist.size());
+//            System.out.println("集合大小================="+certificationuserinfolist.size());
 
             String rs = StringUtils.strip(result.toJSONString(certificationuserinfolist.get(0)), "[]");
-
-            result.put("data",rs);
+            data = JSONObject.parseObject(rs);
+            data.put("idCardValidDate",data.getString("idCardValidDate").replace("~","-"));
+            result.put("data", data);
+            log.info("获取用户基本信息数据接口返回参数 data= " + data);
             try {
                 byte[] publicEncrypt = rsaUtils.encryptByPublicKey(result.toJSONString().getBytes("UTF-8"), appSecret);
-                String byte2Base64 = rsaUtils.byte2Base64(publicEncrypt);
-
-                //String pb = new String(publicEncrypt, "UTF-8");
-
-                //System.out.println(new String(publicEncrypt, "UTF-8"));
-                System.out.println(byte2Base64);
-
+                String byte2Base64 = base64Utils.encode(publicEncrypt);
                 params.put("data", byte2Base64);
-
             } catch (Exception e) {
                 e.printStackTrace();
             }
@@ -378,16 +406,12 @@ System.out.println("==========================================="+params.toJSONSt
             params.put("errorMessage", "");
 
         }
-
-        System.out.println("==========================================="+params.toJSONString());
-
-
-        return  params.toJSONString();
+        log.info("获取用户基本信息数据接口返回加密数据参数 params= " + params);
+        return params.toJSONString();
     }
 
     @ApiOperation("4.3插入用户授权信息数据接口")
     @RequestMapping(value = "/insertDataTaskIdFromZDD")
-    //   public JSONObject insertDataTaskIdFromZDD() {
     public JSONObject insertDataTaskIdFromZDD(@RequestBody String param) {
         log.info("获取用户授权信息数据接口入参 param= " + param);
         Map reMap = new HashMap();
@@ -395,31 +419,19 @@ System.out.println("==========================================="+params.toJSONSt
         reMap.put("codeMsg", "操作成功！");
         //JSONObject result = new JSONObject();
         JSONObject params = JSONObject.parseObject(param);
-//        JSONObject jsonObject = new JSONObject();
-//        //测试数据
-//        jsonObject.put("orderid", "1233");
-//        jsonObject.put("userId", "1233");
-//        jsonObject.put("accredit_Info", "1233");
-//        jsonObject.put("type", "1");
-//        System.out.println(jsonObject);
-
         System.out.println("===============================");
         //insert DB
         Accredit record = params.toJavaObject(Accredit.class);
         record.setCreateTime(new Date());
-        log.info(JSONObject.toJSONString(record));
+        log.info("获取用户授权信息数据后往risk_accredit表插入数据参数："+JSONObject.toJSONString(record));
         int a = accreditDAO.insert(record);
-
         if (a != 1) {
             reMap.put("code", "0");
             reMap.put("codeMsg", "操作失败！");
         }
-        System.out.println(a);
-
+//        System.out.println(a);
         return new JSONObject(reMap);
     }
-
-
 
 
     @ApiOperation("4.4用户申请额度信息存储")
@@ -432,35 +444,13 @@ System.out.println("==========================================="+params.toJSONSt
         reMap.put("code", "100000");
         reMap.put("codeMsg", "操作成功！");
 
-        JSONObject  params = JSONObject.parseObject(param);
-        params.put("createTime",new Date());
-
-//        //自动生成bizNo
-//        long bizno1 = orderSequence.getOrderNo1();
-//        String bizNo = bizno1 + "";
-//        params.put("bizNo", bizNo);
-
-        JSONObject jsonObject = new JSONObject();
-        //测试数据
-        jsonObject.put("userId", "1");
-        jsonObject.put("modelNo", "1");
-        jsonObject.put("applyAmount", "100");
-        jsonObject.put("applyDays", "10");
-        jsonObject.put("applyMonths", "北京");
-        jsonObject.put("contractAmount", "13");
-        jsonObject.put("applyId", "1");
-        jsonObject.put("realName", "1");
-        jsonObject.put("idCard", "100");
-        jsonObject.put("bankCard", "10");
-        jsonObject.put("bankName", "北京");
-        jsonObject.put("bankMobile", "13");
-
-       // System.out.println("#######################################"+jsonObject);
+        JSONObject params = JSONObject.parseObject(param);
+        params.put("createTime", new Date());
 
         ApplyAmount record = params.toJavaObject(ApplyAmount.class);
-        log.info(JSONObject.toJSONString(record));
-        int a=1;
-       //  a = applyAmountDAO.insert(record);
+        log.info("获取用户申请额度信息后往risk_applyamount表插入数据参数："+JSONObject.toJSONString(record));
+        int a = 1;
+          a = applyAmountDAO.insert(record);
         System.out.println(a);
         if (a != 1) {
             reMap.put("code", "0");
@@ -474,54 +464,29 @@ System.out.println("==========================================="+params.toJSONSt
     public JSONObject insertBaseInfo(@RequestBody String param) {
         // public JSONObject insertApplyAmountAndBaseInfo() {
         log.info("4.5用户基本信息存储 param= " + param);
-
-        JSONObject  params = JSONObject.parseObject(param);
-        params.put("createTime",new Date());
-
-
+        int a=1;
+        JSONObject params = JSONObject.parseObject(param);
+        params.put("addressBook",params.getString("mobilelog"));
         Map reMap = new HashMap();
         reMap.put("code", "100000");
         reMap.put("codeMsg", "操作成功！");
-
-        JSONObject jsonObject = new JSONObject();
-        //测试数据
-        jsonObject.put("userId", "1");
-        jsonObject.put("mobile", "1");
-        jsonObject.put("realName", "100");
-        jsonObject.put("nation", "10");
-        jsonObject.put("age", "1");
-        jsonObject.put("addressPermanent", "1");
-        jsonObject.put("idCardValidDate", "100");
-        jsonObject.put("maritalStatus", "1");
-        jsonObject.put("education","1");
-        jsonObject.put("institution", "1");
-        jsonObject.put("addressWork", "100");
-        jsonObject.put("addressHome", "10");
-        jsonObject.put("payday", "北京");
-        jsonObject.put("companyName", "13");
-        jsonObject.put("companyPhone", "1");
-        jsonObject.put("sosContactName", "100");
-        jsonObject.put("sosContactRelation","1");
-        jsonObject.put("sosContactPhone", "北京");
-        jsonObject.put("sosContactName1", "13");
-        jsonObject.put("sosContactRelation1", "2");
-        jsonObject.put("sosContactPhone1", "13");
-        jsonObject.put("lastLoginIp", "北京");
-        jsonObject.put("longitude", "13");
-        jsonObject.put("latitude", "1");
-        jsonObject.put("gpsAddress", "100");
-        jsonObject.put("regOs", "10");
-        jsonObject.put("regAppVersion", "北京");
-        jsonObject.put("regFrom", "13");
-        jsonObject.put("regIp", "北京");
-        jsonObject.put("mobilelog", "[{\"name\":\"唐瑜璟\",\"tel\":\"+8615517813221\"},{\"name\":\"北京租无忧科技有限公司多人通话\",\"tel\":\"01052729739\"}]");
-
-        //System.out.println("#######################################"+jsonObject);
-
-        CertificationUserInfo record1 = params.toJavaObject(CertificationUserInfo.class);
-        log.info(JSONObject.toJSONString(record1));
-        int a = certificationUserInfoDAO.insert(record1);
-        System.out.println(a);
+        CertificationUserInfo record = params.toJavaObject(CertificationUserInfo.class);
+        CertificationUserInfoExample example = new CertificationUserInfoExample();
+        CertificationUserInfoExample.Criteria criteria = example.createCriteria();
+        criteria.andUserIdEqualTo(params.getString("userId"));
+        List<CertificationUserInfo> certificationuserinfolist = certificationUserInfoDAO.selectByExample(example);
+        System.out.println("集合大小================="+certificationuserinfolist.size());
+        if (certificationuserinfolist.size() == 0) {
+            record.setCreateTime(new Date());
+            log.info("获取用户基本信息后往risk_certificationuserinfo表插入数据参数："+JSONObject.toJSONString(record));
+            a= certificationUserInfoDAO.insert(record);
+            System.out.println(a);
+        }else {
+            record.setUpdateTime(new Date());
+            log.info("获取用户基本信息后往risk_certificationuserinfo表更新数据参数："+JSONObject.toJSONString(record));
+            a= certificationUserInfoDAO.updateByExampleSelective(record,example);
+            System.out.println(a);
+        }
         if (a != 1) {
             reMap.put("code", "0");
             reMap.put("codeMsg", "操作失败！");
@@ -530,43 +495,103 @@ System.out.println("==========================================="+params.toJSONSt
     }
 
 
+    @ApiOperation("4.6获取用户设备指纹接口")
+    @RequestMapping(value = "/getDeviceInfo", method = RequestMethod.GET)
+    public String getDeviceInfo(@RequestParam("uid") String uid) {
+        log.info("获取用户设备指纹接口 uid= " + uid);
+
+        JSONObject params = new JSONObject();
+        params.put("success", "true");
+        params.put("errorCode", "");
+        params.put("errorMessage", "");
+        JSONObject data1 = new JSONObject();
+        data1.put("gpsCity", "");
+        data1.put("appVersion", "");
+        data1.put("reputation", "89");
+        data1.put("vendorId", "");
+        data1.put("ipCountry", "中国");
+        data1.put("deviceId", "1722B-000O8460453-52468711");
+        data1.put("gpsStreetNo", "");
+        data1.put("browserVersion", "56.0.2924");
+        data1.put("isProxy", "");
+        data1.put("gpsRegion", "");
+        data1.put("gpsAddress", "");
+        data1.put("deviceType", "PC");
+        data1.put("deviceFirstTs", "2016-06-05 22:08:47");
+        data1.put("app", "");
+        data1.put("ipIsp", "联通");
+        data1.put("isRootJailbreak", "");
+        data1.put("ipLatitude", "31.3");
+        data1.put("ip", "171.34.210.189");
+        data1.put("trueIpRegion", "江西省");
+        data1.put("gps", "");
+        data1.put("gpsDistrict", "");
+        data1.put("isVm", "false");
+        data1.put("IDFA", "");
+        data1.put("phone", "");
+        data1.put("ipRegion", "江西省");
+        data1.put("trueIp", "171.34.210.189");
+        data1.put("trueIpCity", "南昌市");
+        data1.put("screenWidth", "1440");
+        data1.put("ipCity", "南昌市");
+        data1.put("timezone", "+8");
+        data1.put("useragent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/56.0.2924.87 Safari/537.36");
+        data1.put("trueIpLatitude", "31.3");
+        data1.put("imsi", "");
+        data1.put("mac", "");
+        data1.put("trueIpCountry", "中国");
+        data1.put("isDebug", "false");
+        data1.put("appSign", "");
+        data1.put("didMessage", "");
+        data1.put("osVersion", "10.11.6");
+        data1.put("browser", "360");
+        data1.put("ipLongitude", "120.58");
+        data1.put("isSimulator", "false");
+        data1.put("haveCheatApp", "");
+        data1.put("trueIpIsp", "联通");
+        data1.put("os", "MAC OS X");
+        data1.put("ipCoordinate", "120.58 31.3");
+        data1.put("screenHeight", "900");
+        data1.put("gpsBusiness", "");
+        data1.put("trueIpCoordinate", "120.58 31.3");
+        data1.put("url", "https:fanqizha.tongfudun.com");
+        data1.put("trueIpLongitude", "120.58");
+        data1.put("gpsCountry", "");
+        data1.put("imei", "");
+        data1.put("isModify", "false");
+        data1.put("isInit", "false");
+        data1.put("errorCode", "gpsStreet");
+        JSONObject location = new JSONObject();
+        location.put("deviceCountry", "中国");
+        location.put("deviceRegion", "江西省");
+        location.put("deviceCity", "南昌市");
+        location.put("deviceAccuracy", "LOW");
+        data1.put("location", location.toJSONString());
+        try {
+            byte[] publicEncrypt = rsaUtils.encryptByPublicKey(data1.toJSONString().getBytes("UTF-8"), appSecret);
+            String byte2Base64 = rsaUtils.byte2Base64(publicEncrypt);
+            params.put("data", byte2Base64);
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        log.info("获取用户授权信息数据接口返回参数 params= " + params);
+        return params.toJSONString();
+
+    }
+
 
     @ApiOperation("测试类")
     @RequestMapping(value = "/testFromZDD")
-    public JSONObject testFromZDD() {
-        //public JSONObject insertDataTaskIdFromZDD(@RequestBody String param) {
-        // log.info("获取用户授权信息数据接口入参 param= " + param);
-        Map reMap = new HashMap();
-        reMap.put("code", "100000");
-        reMap.put("codeMsg", "操作成功！");
+    public void testFromZDD() {
 
-        JSONObject jsonObject = new JSONObject();
-        //测试数据
-        jsonObject.put("orderid", "1233");
-        jsonObject.put("userId", "1233");
-        jsonObject.put("accreditInfo", "1233");
-        jsonObject.put("type", "1");
-        jsonObject.put("appKey", appKey);
+        JSONObject result = jingDongService.selectAccreditTaskId("123", "1");
 
+        log.info("AccreditTaskId查询结果：" + result);
 
-        System.out.println(appKey);
-
-        byte[] apsdfp = base64Utils.decodeByte(appKey);
-
-        System.out.println(apsdfp);
-
-
-        //byte[] rsa=rsaUtils.encryptByPublicKey(appKey,appSecret);
-
-        System.out.println(getApplyAmount + "\t" + appKey + "\t" + orderSequence.getOrderNo1() + "\t" + apsdfp);
-
-        return new JSONObject(reMap);
     }
 
 
     public static void main(String[] args) {
-
-
         RSAUtils rsaUtils = new RSAUtils();
 
         String appSecret = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCXoybMY/5uNy2ZXDUjR4OWK070kb9DAscEPhvo1f0l1+iTrfja+eXarqvqIL/wHUtpprp8N6IBfr0lrJAvYKVrBj+WS/+PmyhMF45A4ZOz8xhGXdQc6hc+L+/ga/3fAZK4zD1DE8mAiAcTvb7mCO3rZOcGJKDXqnQi0nFcAP2o7QIDAQAB";//接口提供的公钥
@@ -596,9 +621,7 @@ System.out.println("==========================================="+params.toJSONSt
         } catch (Exception e) {
             e.printStackTrace();
         }
-
         System.out.println("1");
-
 
     }
 

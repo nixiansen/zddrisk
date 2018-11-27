@@ -1,5 +1,6 @@
 package com.zdd.risk.utils;
 
+import com.alibaba.fastjson.JSONObject;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
@@ -235,6 +236,45 @@ public class HttpUtils {
 
 	}
 
+
+	/**
+	 * 发送 POST 请求（HTTP），JSON形式
+	 *
+	 * @param apiUrl
+	 *
+	 * @param json
+	 *            json对象
+	 * @return
+	 */
+	public static String doPostHttp(String apiUrl, Object json) {
+		CloseableHttpClient httpClient = HttpClients.createDefault();
+		String httpStr = null;
+		HttpPost httpPost = new HttpPost(apiUrl);
+		CloseableHttpResponse response = null;
+		try {
+			httpPost.setConfig(requestConfig);
+			StringEntity stringEntity = new StringEntity(json.toString(), "UTF-8");// 解决中文乱码问题
+			stringEntity.setContentEncoding("UTF-8");
+			stringEntity.setContentType("application/json");
+			httpPost.setEntity(stringEntity);
+			response = httpClient.execute(httpPost);
+			HttpEntity entity = response.getEntity();
+			log(response.getStatusLine().getStatusCode() + "");
+			httpStr = EntityUtils.toString(entity, "UTF-8");
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			if (response != null) {
+				try {
+					EntityUtils.consume(response.getEntity());
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		return httpStr;
+	}
+
 	/**
 	 * 发送 POST 请求（HTTP），K-V形式
 	 * 
@@ -286,7 +326,7 @@ public class HttpUtils {
 
 	/**
 	 * 发送 POST 请求（HTTP），JSON形式
-	 * 
+	 *
 	 * @param apiUrl
 	 * @param headers
 	 *            需要添加的httpheader参数
@@ -336,8 +376,8 @@ public class HttpUtils {
 	/**
 	 * 发送 POST 请求（HTTP），JSON形式
 	 *
-	 * @param apiUrl
-	 * @param json
+	 * @param url
+	 * @param jsonString
 	 *            json对象
 	 * @return
 	 */
@@ -377,6 +417,54 @@ public class HttpUtils {
 		}
 		return result;
 	}
+
+
+	/**
+	 * 发送 SSL POST 请求（HTTPS），JSON形式
+	 *
+	 * @param apiUrl
+	 *            API接口URL
+	 * @param json
+	 *            JSON对象
+	 * @return
+	 */
+	public static String doPostSSL(String apiUrl, Object json) {
+		CloseableHttpClient httpClient = HttpClients.custom().setSSLSocketFactory(createSSLConnSocketFactory())
+				.setConnectionManager(connMgr).setDefaultRequestConfig(requestConfig).build();
+		HttpPost httpPost = new HttpPost(apiUrl);
+		CloseableHttpResponse response = null;
+		String httpStr = null;
+		try {
+			httpPost.setConfig(requestConfig);
+			StringEntity stringEntity = new StringEntity(json.toString(), "UTF-8");// 解决中文乱码问题
+			stringEntity.setContentEncoding("UTF-8");
+			stringEntity.setContentType("application/json");
+			httpPost.setEntity(stringEntity);
+			response = httpClient.execute(httpPost);
+			int statusCode = response.getStatusLine().getStatusCode();
+			if (statusCode != HttpStatus.SC_OK) {
+				return null;
+			}
+			HttpEntity entity = response.getEntity();
+			if (entity == null) {
+				return null;
+			}
+			httpStr = EntityUtils.toString(entity, "utf-8");
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			if (response != null) {
+				try {
+					EntityUtils.consume(response.getEntity());
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		return httpStr;
+	}
+
+
 
 	/**
 	 * 发送 SSL POST 请求（HTTPS），K-V形式
@@ -536,4 +624,120 @@ public class HttpUtils {
 	public static void main(String[] args) throws Exception {
 
 	}
+
+
+
+/*
+	*
+	*
+	*
+	* */
+
+	public static String doPostClient(String apiUrl,  Object json) {
+		CloseableHttpClient httpClient = HttpClients.custom().setSSLSocketFactory(createSSLConnSocketFactory())
+				.setConnectionManager(connMgr).setDefaultRequestConfig(requestConfig).build();
+		HttpPost httpPost = new HttpPost(apiUrl);
+		CloseableHttpResponse response = null;
+		String httpStr = null;
+
+
+		try{
+
+
+			//param参数，可以为param="key1=value1&key2=value2"的一串字符串,或者是jsonObject
+
+			String result=json.toString();
+
+
+
+			StringEntity stringEntity = new StringEntity(result);
+			stringEntity.setContentType("application/x-www-form-urlencoded");
+
+			httpPost.setEntity(stringEntity);
+
+			HttpClient client = new DefaultHttpClient();
+
+			HttpResponse httpResponse = client.execute(httpPost);
+
+			 httpStr = EntityUtils.toString(httpResponse.getEntity(), "utf-8");
+
+		} catch(IOException e){
+
+		}
+
+
+/*		try {
+			httpPost.setConfig(requestConfig);
+			StringEntity stringEntity = new StringEntity(json.toString(), "UTF-8");// 解决中文乱码问题
+			stringEntity.setContentEncoding("UTF-8");
+			stringEntity.setContentType("application/json");
+			httpPost.setEntity(stringEntity);
+			response = httpClient.execute(httpPost);
+			int statusCode = response.getStatusLine().getStatusCode();
+			if (statusCode != HttpStatus.SC_OK) {
+				return null;
+			}
+			HttpEntity entity = response.getEntity();
+			if (entity == null) {
+				return null;
+			}
+			httpStr = EntityUtils.toString(entity, "utf-8");
+		} catch (Exception e) {
+			e.printStackTrace();
+		} finally {
+			if (response != null) {
+				try {
+					EntityUtils.consume(response.getEntity());
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}*/
+		return httpStr;
+	}
+
+	/**
+	 * 发送 POST 请求（HTTP），K-V形式
+	 *
+	 * @param apiUrl
+	 *            API接口URL
+	 * @param params
+	 *            参数map
+	 * @return
+	 */
+	public static String doPostHttp1(String apiUrl,  Map<String, JSONObject> params) {
+		CloseableHttpClient httpClient = HttpClients.createDefault();
+		String httpStr = null;
+		HttpPost httpPost = new HttpPost(apiUrl);
+		CloseableHttpResponse response = null;
+
+		try {
+			httpPost.setConfig(requestConfig);
+			List<NameValuePair> pairList = new ArrayList<NameValuePair>(params.size());
+			for (Map.Entry<String, JSONObject> entry : params.entrySet()) {
+				NameValuePair pair = new BasicNameValuePair(entry.getKey(), entry.getValue().toString());
+				pairList.add(pair);
+			}
+			httpPost.setEntity(new UrlEncodedFormEntity(pairList, Charset.forName("UTF-8")));
+			response = httpClient.execute(httpPost);
+			log(response.toString());
+			HttpEntity entity = response.getEntity();
+			httpStr = EntityUtils.toString(entity, "UTF-8");
+		} catch (IOException e) {
+			e.printStackTrace();
+		} finally {
+			if (response != null) {
+				try {
+					EntityUtils.consume(response.getEntity());
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+		return httpStr;
+	}
+
+
+
+
 }
