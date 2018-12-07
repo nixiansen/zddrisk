@@ -1,20 +1,12 @@
 package com.zdd.risk.api;
 
-import ch.qos.logback.core.net.SyslogOutputStream;
 import com.alibaba.fastjson.JSONObject;
 import com.zdd.risk.bean.*;
-import com.zdd.risk.dao.IAccreditDAO;
-import com.zdd.risk.dao.IApplyAmountDAO;
-import com.zdd.risk.dao.IApproveResultDAO;
-import com.zdd.risk.dao.ICertificationUserInfoDAO;
+import com.zdd.risk.dao.*;
 import com.zdd.risk.service.JingDongService;
-import com.zdd.risk.utils.Base64Utils;
-import com.zdd.risk.utils.HttpUtils;
-import com.zdd.risk.utils.OrderSequence;
-import com.zdd.risk.utils.RSAUtils;
+import com.zdd.risk.utils.*;
 import io.swagger.annotations.ApiOperation;
 import org.apache.commons.lang.StringUtils;
-import org.apache.http.client.utils.HttpClientUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,11 +14,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.PropertySource;
 import org.springframework.web.bind.annotation.*;
 
-import java.security.PublicKey;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
  * JingDong Service
@@ -36,7 +29,7 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/risk/jingdong")
-@PropertySource(value = "classpath:jingdong/jingdong.properties", ignoreResourceNotFound = true)
+@PropertySource(value = "classpath:sanfang/jingdong.properties", ignoreResourceNotFound = true)
 public class JingdongController {
 
 
@@ -80,6 +73,8 @@ public class JingdongController {
     private IApproveResultDAO approveResultDAO;
     @Autowired
     private ICertificationUserInfoDAO certificationUserInfoDAO;
+    @Autowired
+    private IApproveStrategyResultDAO approveStrategyResultDAO;
 
     @Autowired
     private OrderSequence orderSequence;
@@ -93,17 +88,10 @@ public class JingdongController {
     @Autowired
     private JingDongService jingDongService;
 
-
-    public String getBizNo1() {
-        return bizNo1;
-    }
-
-    public void setBizNo1(String bizNo1) {
-        this.bizNo1 = bizNo1;
-    }
-
-    public static String bizNo1;
-
+    @Autowired
+    private ComputeAge computeAge;
+    @Autowired
+    private MoXieController moXieController;
 
     @ApiOperation("3.1请求ZRobot风控服务接口")
     @RequestMapping(value = "/approve")
@@ -129,14 +117,34 @@ public class JingdongController {
 
 
         //查询bizNo
-        long bizno1 = orderSequence.getOrderNo1();
+        long bizno1 = orderSequence.getOrderNo2();
         String bizNo = bizno1 + "";
         params.put("bizNo", bizNo);
-        JingdongController jingdong = new JingdongController();
-        jingdong.setBizNo1(bizNo);
+
+//        把bizNo数据插入risk_applyamount表
+        JSONObject bizjson = new JSONObject();
+        bizjson.put("bizNo", bizNo);
+        bizjson.put("userId", params.getString("userId"));
+        ApplyAmount record = bizjson.toJavaObject(ApplyAmount.class);
+        ApplyAmountExample example = new ApplyAmountExample();
+        ApplyAmountExample.Criteria criteria = example.createCriteria();
+        criteria.andUserIdEqualTo(bizjson.getString("userId"));
+        List<ApplyAmount> applyAmountlist = applyAmountDAO.selectByExample(example);
+        int a = 1;
+        System.out.println("集合大小=================" + applyAmountlist.size());
+        if (applyAmountlist.size() == 0) {
+            record.setCreateTime(new Date());
+            log.info("往risk_applyamount表插入bizNo数据参数：" + JSONObject.toJSONString(record));
+            a = applyAmountDAO.insert(record);
+            System.out.println(a);
+        } else {
+            record.setUpdateTime(new Date());
+            log.info("往risk_applyamount表更新bizNo数据参数：" + JSONObject.toJSONString(record));
+            a = applyAmountDAO.updateByExampleSelective(record, example);
+            System.out.println(a);
+        }
 
         String productId = params.getString("productId");
-
         if (productId.equals("1")) {
             params.put("productId", "creditRentForCollege");
 
@@ -160,6 +168,18 @@ public class JingdongController {
         params.put("dataTaskId", resultat.toJSONString());
         log.info("AccreditTaskId查询结果：" + resultat);
         log.info("调用京东风控策略接口传入参数信息 ：" + params);
+
+//        Tools tools = new Tools();
+//        String gettype = tools.getRandomInfo();
+//
+//        if (gettype.equals("0")) {
+//            HttpUtils http = new HttpUtils();
+//            String result = http.post(APIurl, params.toJSONString());
+//            log.info("调用京东风控策略接口返回信息 result= " + result);
+//        } else {
+//
+//        }
+
         //调用京东风控策略接口
         HttpUtils http = new HttpUtils();
         String result = http.post(APIurl, params.toJSONString());
@@ -167,7 +187,6 @@ public class JingdongController {
         //TODO
         //回调业务系统
         return new JSONObject(reMap);
-
     }
 
     @ApiOperation("3.2ZRobot风控审批结果回调接口")
@@ -199,43 +218,17 @@ public class JingdongController {
     @RequestMapping(value = "/resultApproveToZRobot")
     public void resultApproveToZRobot(@RequestBody String userId) {
         log.info("返回ZRobot风控服务回调接口入参 userId= " + userId);
-        JSONObject jsonObject = new JSONObject();
-        //测试数据
-        jsonObject.put("bizNo", "");
-        jsonObject.put("userId", userId);
-        jsonObject.put("payIndex", "");
-        jsonObject.put("approveResult", "");
-        jsonObject.put("approveCredit", "");
-        jsonObject.put("approveAPR", "");
-        jsonObject.put("approveDPR", "");
-        jsonObject.put("minLoanTerm", "");
-        jsonObject.put("maxLoanTerm", "");
-        jsonObject.put("refuseCode", "");
-        jsonObject.put("refuseReason", "");
-        jsonObject.put("approveTime", "");
 
+//        JSONObject jsonObject1 = new JSONObject();
+//        //测试数据
+//        jsonObject1.put("userId", userId);
+//        jsonObject1.put("approveResult", "pass");
+//        jsonObject1.put("approveCredit", "5000");
         //通过userID查询数据
-//        ApproveResultExample example = new ApproveResultExample();
-//        ApproveResultExample.Criteria criteria = example.createCriteria();
-//        criteria.andUserIdEqualTo(userId);
-        //通过userID查询申请额度信息
-      //  List<ApproveResult> approveResute1 = approveResultDAO.selectByExample(example);
-
-        List<ApproveResult> approveResute1=jingDongService.selectByExample(userId);
-
-        System.out.println(jsonObject.toJSONString(approveResute1));
-        if (approveResute1.size() != 0) {
-            System.out.println(approveResute1.size());
-            String a = StringUtils.strip(jsonObject.toJSONString(approveResute1.get(approveResute1.size()-1)), "[]");
-            jsonObject = JSONObject.parseObject(a);
-        }
-//        JSONObject result= JSONObject.parseObject(jsonObject.toJSONString());
-       // result1.put("result",jsonObject);
-
-        Map<String,JSONObject> map=new HashMap<String,JSONObject>();
-        map.put("result",jsonObject);
-
-//        log.info("回调业务部门的接口传入参数信息 ：" + jsonObject);
+        String approveResute = jingDongService.selectByExample1(userId);
+        Map<String, JSONObject> map = new HashMap<String, JSONObject>();
+        JSONObject jsonObject = JSONObject.parseObject(approveResute);
+        map.put("result", jsonObject);
         log.info("回调业务部门的接口传入参数信息 ：" + map.toString());
         //回调业务部门的接口
         HttpUtils http = new HttpUtils();
@@ -243,15 +236,45 @@ public class JingdongController {
         log.info("回调业务部门的接口返回信息 result= " + result1);
     }
 
+
+    @ApiOperation("3.4京东风控策略详细返回信息")
+    @RequestMapping(value = "/approveStrategyResult")
+    public JSONObject approveStrategyResult(@RequestBody String param) {
+
+        log.info("京东风控策略详细返回信息 param= " + param);
+        Map reMap = new HashMap();
+        reMap.put("success", "true");
+        JSONObject params = JSONObject.parseObject(param);
+        params.put("zrobotCredit", params.getString("zrobotCredit"));
+        params.put("zrobotBlack", params.getString("zrobotBlack"));
+        params.put("financalBehavior", params.getString("financalBehavior"));
+        params.put("antiFraud", params.getString("antiFraud"));
+        params.put("userId", params.getString("uid"));
+        //insert DB
+
+        log.info("往risk_approveStrategyResult表插入数据参数 param1= " + params);
+        ApproveStrategyResult record = params.toJavaObject(ApproveStrategyResult.class);
+        record.setCreateTime(new Date());
+        log.info("往risk_approveStrategyResult表插入数据参数 param1= " + JSONObject.toJSONString(record));
+        int a = approveStrategyResultDAO.insert(record);
+        if (a != 1) {
+            reMap.put("success", "false");
+        } else {
+            resultApproveToZRobot(params.getString("userId"));
+        }
+        //TODO
+        //回调业务系统
+        return new JSONObject(reMap);
+
+
+    }
+
     @ApiOperation("4.1获取用户申请额度接口")
     @RequestMapping(value = "/getApplyAmountFromZDD", method = RequestMethod.GET)
     public String getApplyAmountFromZDD(@RequestParam("uid") String uid) {
-        log.info("获取用户授权信息数据接口入参 uid= " + uid);
+        log.info("获取用户授权信息数据接口入参条件 uid= " + uid);
 
         JSONObject params = new JSONObject();
-
-        JingdongController jingdong = new JingdongController();
-        String bizNo2 = jingdong.getBizNo1();
 
         //初始化返回参数
         JSONObject data = new JSONObject();
@@ -261,7 +284,12 @@ public class JingdongController {
         data.put("applyMonths", "12");
         data.put("contractAmount", "5000");
         data.put("modelNo", "iPhone 7s 银色/128G");
-        data.put("bizNo", bizNo2);
+//        JSONObject resultat = jingDongService.selectBizNo(uid);
+//        data.put("bizNo", resultat.getString("bizNo"));
+        data.put("bizNo", "100003445460110851003989");
+
+
+        log.info("获取用户授权信息数据接口入参 data:" + data);
 
         //select DB
 /*        ApplyAmountExample example = new ApplyAmountExample();
@@ -372,7 +400,7 @@ public class JingdongController {
         criteria.andUserIdEqualTo(uid);
         //通过userID查询用户基本信息数据
         List<CertificationUserInfo> certificationuserinfolist = certificationUserInfoDAO.selectByExample(example);
-        System.out.println("集合大小================="+certificationuserinfolist.size());
+        System.out.println("集合大小=================" + certificationuserinfolist.size());
         if (certificationuserinfolist.size() == 0) {
             params.put("success", "fails");
             params.put("errorCode", "查询失败");
@@ -391,7 +419,7 @@ public class JingdongController {
 
             String rs = StringUtils.strip(result.toJSONString(certificationuserinfolist.get(0)), "[]");
             data = JSONObject.parseObject(rs);
-            data.put("idCardValidDate",data.getString("idCardValidDate").replace("~","-"));
+            data.put("idCardValidDate", data.getString("idCardValidDate").replace("~", "-"));
             result.put("data", data);
             log.info("获取用户基本信息数据接口返回参数 data= " + data);
             try {
@@ -419,11 +447,38 @@ public class JingdongController {
         reMap.put("codeMsg", "操作成功！");
         //JSONObject result = new JSONObject();
         JSONObject params = JSONObject.parseObject(param);
+
+        ExecutorService executorService = Executors.newFixedThreadPool(20);
+
+        if (params.getString("type").equals("1")) {
+            executorService.execute(new Runnable() {
+                @Override
+                public void run() {
+                    moXieController.getCarrierInfo(param);
+                }
+            });
+        } else if (params.getString("type").equals("2")) {
+            executorService.execute(new Runnable() {
+                @Override
+                public void run() {
+                    moXieController.getTaobaoInfo(param);
+                    moXieController.getTaobaoReport(param);
+                }
+            });
+        } else if (params.getString("type").equals("3")) {
+            executorService.execute(new Runnable() {
+                @Override
+                public void run() {
+                    moXieController.getCarrierReport(param);
+                    moXieController.getEducationInfo(param);
+                }
+            });
+        }
         System.out.println("===============================");
         //insert DB
         Accredit record = params.toJavaObject(Accredit.class);
         record.setCreateTime(new Date());
-        log.info("获取用户授权信息数据后往risk_accredit表插入数据参数："+JSONObject.toJSONString(record));
+        log.info("获取用户授权信息数据后往risk_accredit表插入数据参数：" + JSONObject.toJSONString(record));
         int a = accreditDAO.insert(record);
         if (a != 1) {
             reMap.put("code", "0");
@@ -445,13 +500,26 @@ public class JingdongController {
         reMap.put("codeMsg", "操作成功！");
 
         JSONObject params = JSONObject.parseObject(param);
-        params.put("createTime", new Date());
 
         ApplyAmount record = params.toJavaObject(ApplyAmount.class);
-        log.info("获取用户申请额度信息后往risk_applyamount表插入数据参数："+JSONObject.toJSONString(record));
+        ApplyAmountExample example = new ApplyAmountExample();
+        ApplyAmountExample.Criteria criteria = example.createCriteria();
+        criteria.andUserIdEqualTo(params.getString("userId"));
+        List<ApplyAmount> applyAmountlist = applyAmountDAO.selectByExample(example);
         int a = 1;
-          a = applyAmountDAO.insert(record);
-        System.out.println(a);
+        System.out.println("集合大小=================" + applyAmountlist.size());
+        if (applyAmountlist.size() == 0) {
+            record.setCreateTime(new Date());
+            log.info("获取用户基本信息后往risk_applyamount表插入数据参数：" + JSONObject.toJSONString(record));
+            a = applyAmountDAO.insert(record);
+            System.out.println(a);
+        } else {
+            record.setUpdateTime(new Date());
+            log.info("获取用户基本信息后往risk_applyamount表更新数据参数：" + JSONObject.toJSONString(record));
+            a = applyAmountDAO.updateByExampleSelective(record, example);
+            System.out.println(a);
+        }
+
         if (a != 1) {
             reMap.put("code", "0");
             reMap.put("codeMsg", "操作失败！");
@@ -464,9 +532,13 @@ public class JingdongController {
     public JSONObject insertBaseInfo(@RequestBody String param) {
         // public JSONObject insertApplyAmountAndBaseInfo() {
         log.info("4.5用户基本信息存储 param= " + param);
-        int a=1;
+        int a = 1;
         JSONObject params = JSONObject.parseObject(param);
-        params.put("addressBook",params.getString("mobilelog"));
+//获取用户年龄
+        String idCard = params.get("idCard").toString();
+        int getage = computeAge.getAge(idCard);
+        params.put("age", getage);
+        params.put("addressBook", params.getString("mobilelog"));
         Map reMap = new HashMap();
         reMap.put("code", "100000");
         reMap.put("codeMsg", "操作成功！");
@@ -475,16 +547,16 @@ public class JingdongController {
         CertificationUserInfoExample.Criteria criteria = example.createCriteria();
         criteria.andUserIdEqualTo(params.getString("userId"));
         List<CertificationUserInfo> certificationuserinfolist = certificationUserInfoDAO.selectByExample(example);
-        System.out.println("集合大小================="+certificationuserinfolist.size());
+        System.out.println("集合大小=================" + certificationuserinfolist.size());
         if (certificationuserinfolist.size() == 0) {
             record.setCreateTime(new Date());
-            log.info("获取用户基本信息后往risk_certificationuserinfo表插入数据参数："+JSONObject.toJSONString(record));
-            a= certificationUserInfoDAO.insert(record);
+            log.info("获取用户基本信息后往risk_certificationuserinfo表插入数据参数：" + JSONObject.toJSONString(record));
+            a = certificationUserInfoDAO.insert(record);
             System.out.println(a);
-        }else {
+        } else {
             record.setUpdateTime(new Date());
-            log.info("获取用户基本信息后往risk_certificationuserinfo表更新数据参数："+JSONObject.toJSONString(record));
-            a= certificationUserInfoDAO.updateByExampleSelective(record,example);
+            log.info("获取用户基本信息后往risk_certificationuserinfo表更新数据参数：" + JSONObject.toJSONString(record));
+            a = certificationUserInfoDAO.updateByExampleSelective(record, example);
             System.out.println(a);
         }
         if (a != 1) {
@@ -587,41 +659,6 @@ public class JingdongController {
         JSONObject result = jingDongService.selectAccreditTaskId("123", "1");
 
         log.info("AccreditTaskId查询结果：" + result);
-
-    }
-
-
-    public static void main(String[] args) {
-        RSAUtils rsaUtils = new RSAUtils();
-
-        String appSecret = "MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCXoybMY/5uNy2ZXDUjR4OWK070kb9DAscEPhvo1f0l1+iTrfja+eXarqvqIL/wHUtpprp8N6IBfr0lrJAvYKVrBj+WS/+PmyhMF45A4ZOz8xhGXdQc6hc+L+/ga/3fAZK4zD1DE8mAiAcTvb7mCO3rZOcGJKDXqnQi0nFcAP2o7QIDAQAB";//接口提供的公钥
-        String appKey = "diofi9329y23h2d8723e2df34";
-//        JSONObject result = new JSONObject();
-        JSONObject params = new JSONObject();
-
-
-        JSONObject database2 = new JSONObject();
-        database2.put("getTaobaoInfo", "4787959537775966181");
-        database2.put("getTaobaoReport", "4787959537775966181");
-        database2.put("appKey", appKey);
-
-
-        PublicKey publicKey = null;
-        try {
-            publicKey = rsaUtils.string2PublicKey(appSecret);
-            System.out.println(appSecret);
-
-            byte[] publicEncrypt = rsaUtils.publicEncrypt(params.toJSONString().getBytes("UTF-8"), publicKey);
-
-            String pb = new String(publicEncrypt, "UTF-8");
-
-            System.out.println(publicEncrypt);
-            System.out.println(new String(publicEncrypt, "UTF-8"));
-
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        System.out.println("1");
 
     }
 

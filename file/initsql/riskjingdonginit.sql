@@ -188,3 +188,24 @@ alter TABLE risk_applyamount modify  COLUMN modelNo varchar(100)  COMMENT "规�
 
 --=============================2018-11-27修改表类型=======================
 ALTER TABLE risk_certificationuserinfo ADD COLUMN addressBook mediumtext COMMENT "通讯录" ;
+
+
+-================================2018-12-07增加表结构===============
+CREATE TABLE `risk_approvestrategyresult` (
+  `id` int(10) NOT NULL AUTO_INCREMENT,
+  `userId` varchar(20) NOT NULL COMMENT '用户唯一编号',
+  `bizNo` varchar(20) DEFAULT NULL COMMENT '订单号',
+  `applyId` varchar(20) CHARACTER SET utf16le DEFAULT NULL COMMENT '进件编号',
+  `mobileAuthentication` varchar(10) DEFAULT NULL COMMENT '三要素是否一致',
+  `virtualTip` varchar(10) DEFAULT NULL COMMENT '是否命中虚拟运营商标签',
+  `mobileOnlineTime` varchar(10) DEFAULT NULL COMMENT '手机号入网时长（月）',
+  `loanBlackList` varchar(10) DEFAULT NULL COMMENT '是否命中网贷黑名单',
+  `zrobotCredit` text COMMENT 'ZRobot信用',
+  `zrobotBlack` text COMMENT '黑名单-ZRobot',
+  `financalBehavior` text COMMENT '金融行为标签',
+  `antiFraud` text COMMENT '反欺诈数据',
+  `remark` varchar(30) DEFAULT NULL COMMENT '备注',
+  `createTime` datetime DEFAULT NULL COMMENT '创建时间',
+  `updateTime` datetime DEFAULT NULL COMMENT '更新时间',
+  PRIMARY KEY (`id`) USING BTREE
+) ENGINE=InnoDB AUTO_INCREMENT=13 DEFAULT CHARSET=utf8mb4;

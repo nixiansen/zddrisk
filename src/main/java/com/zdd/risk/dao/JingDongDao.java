@@ -17,12 +17,17 @@ import java.util.Map;
 public interface JingDongDao {
 
 
-    @Select("SELECT taskId,type FROM risk_accredit WHERE userId = #{userId} ")
+    @Select("( SELECT * FROM risk_accredit WHERE userId = #{userId} AND type = \"1\" ORDER BY createTime DESC LIMIT 1 ) UNION ALL ( SELECT * FROM risk_accredit WHERE userId = #{userId} AND type = \"2\" ORDER BY createTime DESC LIMIT 1 ) UNION ALL ( SELECT * FROM risk_accredit WHERE userId = #{userId} AND type = \"3\" ORDER BY createTime DESC LIMIT 1 )")
     public List<Accredit>  selectTaskids(@Param("userId") String uid);
 
 
 
-    @Select("SELECT * FROM risk_approveresult WHERE userId = #{userId}  ORDER BY createTime DESC LIMIT 1")
+    @Select("SELECT userId,approveCredit,approveResult FROM risk_approveresult WHERE userId = #{userId}  ORDER BY createTime DESC LIMIT 1")
     public List<ApproveResult>  selectByExample(@Param("userId") String uid);
+
+
+    @Select("SELECT * FROM risk_applyamount WHERE userId = #{userId}  ORDER BY createTime DESC LIMIT 1")
+    public List<ApproveResult>  selectBizNo(@Param("userId") String uid);
+
 
 }
