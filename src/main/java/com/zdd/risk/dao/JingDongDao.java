@@ -22,7 +22,7 @@ public interface JingDongDao {
 
 
 
-    @Select("SELECT userId,approveCredit,approveResult FROM risk_approveresult WHERE userId = #{userId}  ORDER BY createTime DESC LIMIT 1")
+    @Select("SELECT userId,approveCredit,approveResult FROM risk_approveresult WHERE userId = #{userId}  and  bizNo is null  ORDER BY createTime DESC LIMIT 1")
     public List<ApproveResult>  selectByExample(@Param("userId") String uid);
 
 

@@ -62,6 +62,12 @@ public class JingdongController {
     @Value("${tobizurl}")
     String tobizurl;
 
+    @Value("${fqzurl}")
+    String fqzurl;
+
+    @Value("${fqzfhurl}")
+    String fqzfhurl;
+
 
     private static final Logger log = LoggerFactory.getLogger(JingdongController.class);
 
@@ -92,6 +98,8 @@ public class JingdongController {
     private ComputeAge computeAge;
     @Autowired
     private MoXieController moXieController;
+    @Autowired
+    JingdongController jingdongControl;
 
     @ApiOperation("3.1请求ZRobot风控服务接口")
     @RequestMapping(value = "/approve")
@@ -172,18 +180,35 @@ public class JingdongController {
 //        Tools tools = new Tools();
 //        String gettype = tools.getRandomInfo();
 //
-//        if (gettype.equals("0")) {
-//            HttpUtils http = new HttpUtils();
-//            String result = http.post(APIurl, params.toJSONString());
-//            log.info("调用京东风控策略接口返回信息 result= " + result);
-//        } else {
-//
-//        }
+//        System.out.println(gettype);
 
-        //调用京东风控策略接口
+//        if (gettype.equals("0")) {
         HttpUtils http = new HttpUtils();
-        String result = http.post(APIurl, params.toJSONString());
-        log.info("调用京东风控策略接口返回信息 result= " + result);
+        String result = http.post(fqzurl, params.getString("userId"));
+        log.info("调用反欺诈风控策略接口返回信息 result= " + result);
+        JSONObject reparam = JSONObject.parseObject(result);
+        reparam.put("uid", params.getString("userId"));
+
+//            JSONObject reparam=new JSONObject();
+//            reparam.put("uid","jirhat17f9us");
+//            reparam.put("approveResult","E");
+//            reparam.put("approveCredit",0);
+
+        ExecutorService executorService = Executors.newFixedThreadPool(20);
+        executorService.execute(new Runnable() {
+            @Override
+            public void run() {
+                HttpUtils http1 = new HttpUtils();
+                String result1 = http1.post(fqzfhurl, reparam.toJSONString());
+                log.info("调用京东反欺诈策略接口返回信息 result1= " + result1);
+            }
+        });
+//        } else {
+        //调用京东风控策略接口
+        HttpUtils http2 = new HttpUtils();
+        String result2 = http2.post(APIurl, params.toJSONString());
+        log.info("调用京东风控策略接口返回信息 result= " + result2);
+//        }
         //TODO
         //回调业务系统
         return new JSONObject(reMap);
@@ -203,8 +228,34 @@ public class JingdongController {
         record.setCreateTime(new Date());
         log.info("往risk_approveResult表插入数据参数 param1= " + JSONObject.toJSONString(record));
         int a = approveResultDAO.insert(record);
+        System.out.println("==========================================================");
         if (a != 1) {
             reMap.put("success", "false");
+            log.info("往risk_approveResult表插入数据失败" + JSONObject.toJSONString(record));
+        }
+        //TODO
+        //回调业务系统
+        return new JSONObject(reMap);
+    }
+
+    @ApiOperation("3.5ZRobot风控审批结果回调接口")
+    @RequestMapping(value = "/approveResultFromZRobottwo")
+    public JSONObject approveResultFromZRobottwo(@RequestBody String param) {
+        log.info("获取反欺诈风控审批结果回调接口入参 param= " + param);
+        Map reMap = new HashMap();
+        reMap.put("success", "true");
+        JSONObject params = JSONObject.parseObject(param);
+        params.put("approveCredit", params.getInteger("approveCredit") * 100);
+        params.put("userId", params.getString("uid"));
+        //insert DB
+        ApproveResult record = params.toJavaObject(ApproveResult.class);
+        record.setCreateTime(new Date());
+        log.info("往risk_approveResult表插入数据参数 param1= " + JSONObject.toJSONString(record));
+        int a = approveResultDAO.insert(record);
+        System.out.println("==========================================================");
+        if (a != 1) {
+            reMap.put("success", "false");
+            log.info("往risk_approveResult表插入数据失败" + JSONObject.toJSONString(record));
         } else {
             resultApproveToZRobot(params.getString("userId"));
         }
@@ -251,7 +302,6 @@ public class JingdongController {
         params.put("antiFraud", params.getString("antiFraud"));
         params.put("userId", params.getString("uid"));
         //insert DB
-
         log.info("往risk_approveStrategyResult表插入数据参数 param1= " + params);
         ApproveStrategyResult record = params.toJavaObject(ApproveStrategyResult.class);
         record.setCreateTime(new Date());
@@ -259,23 +309,17 @@ public class JingdongController {
         int a = approveStrategyResultDAO.insert(record);
         if (a != 1) {
             reMap.put("success", "false");
-        } else {
-            resultApproveToZRobot(params.getString("userId"));
         }
         //TODO
         //回调业务系统
         return new JSONObject(reMap);
-
-
     }
 
     @ApiOperation("4.1获取用户申请额度接口")
     @RequestMapping(value = "/getApplyAmountFromZDD", method = RequestMethod.GET)
     public String getApplyAmountFromZDD(@RequestParam("uid") String uid) {
         log.info("获取用户授权信息数据接口入参条件 uid= " + uid);
-
         JSONObject params = new JSONObject();
-
         //初始化返回参数
         JSONObject data = new JSONObject();
         data.put("uid", uid);

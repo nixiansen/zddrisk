@@ -175,6 +175,13 @@ public class JingDongTest {
     }
 
 
+        public static void main(String[] args) {
+
+        String a="3.0";
+
+                  System.out.println(Double.valueOf(a).intValue());
+                    }
+
 
 
 

@@ -1,5 +1,7 @@
 package com.zdd.risk.utils;
 
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.PropertySource;
 import sun.misc.BASE64Decoder;
 import sun.misc.BASE64Encoder;
 
@@ -21,7 +23,14 @@ import java.util.Random;
  * @author 租无忧科技有限公司
  * @date 2018-11-01.
  */
+
+@PropertySource(value = "classpath:sanfang/moxie.properties", ignoreResourceNotFound = true)
 public class Tools {
+
+//    @Value("${gdz}")
+//    String gdz;
+
+
     private static final Random random = new Random();
 
     public static void copyFileUsingFileChannels(File source, File dest) throws IOException {
@@ -111,19 +120,22 @@ public class Tools {
         double a;
         String b;
         a = Math.random();
+//        System.out.println(a);
         if (a <= 0.8) {
-            b = "1";
-        } else {
             b = "0";
+        } else {
+            b = "1";
         }
+
         return b;
 
     }
 
 //    public static void main(String[] args) {
 //        Tools tools = new Tools();
-//        tools.getRandomInfo();
-//        System.out.println(tools.getRandomInfo());
+//        for (int i=0;i<=20;i++){
+//            System.out.println(tools.getRandomInfo());
+//        }
 //    }
 
 
