@@ -151,7 +151,6 @@ public class JingdongController {
             a = applyAmountDAO.updateByExampleSelective(record, example);
             System.out.println(a);
         }
-
         String productId = params.getString("productId");
         if (productId.equals("1")) {
             params.put("productId", "creditRentForCollege");
@@ -179,35 +178,39 @@ public class JingdongController {
 
 //        Tools tools = new Tools();
 //        String gettype = tools.getRandomInfo();
-//
 //        System.out.println(gettype);
-
 //        if (gettype.equals("0")) {
-        HttpUtils http = new HttpUtils();
-        String result = http.post(fqzurl, params.getString("userId"));
-        log.info("调用反欺诈风控策略接口返回信息 result= " + result);
-        JSONObject reparam = JSONObject.parseObject(result);
-        reparam.put("uid", params.getString("userId"));
 
-//            JSONObject reparam=new JSONObject();
-//            reparam.put("uid","jirhat17f9us");
-//            reparam.put("approveResult","E");
-//            reparam.put("approveCredit",0);
 
+//调用反欺诈模型策略
         ExecutorService executorService = Executors.newFixedThreadPool(20);
         executorService.execute(new Runnable() {
             @Override
             public void run() {
+                try {
+                    Thread.sleep(8000);
+                } catch (InterruptedException e) {
+                    e.printStackTrace();
+                }
+                HttpUtils http = new HttpUtils();
+                String result = http.post(fqzurl, params.getString("userId"));
+                log.info("调用反欺诈风控策略接口返回信息 result= " + result);
+                JSONObject reparam = JSONObject.parseObject(result);
+                reparam.put("uid", params.getString("userId"));
+
                 HttpUtils http1 = new HttpUtils();
                 String result1 = http1.post(fqzfhurl, reparam.toJSONString());
                 log.info("调用京东反欺诈策略接口返回信息 result1= " + result1);
             }
         });
+
+
 //        } else {
+
         //调用京东风控策略接口
         HttpUtils http2 = new HttpUtils();
         String result2 = http2.post(APIurl, params.toJSONString());
-        log.info("调用京东风控策略接口返回信息 result= " + result2);
+        log.info("调用京东风控策略接口返回信息 result2= " + result2);
 //        }
         //TODO
         //回调业务系统
@@ -270,11 +273,6 @@ public class JingdongController {
     public void resultApproveToZRobot(@RequestBody String userId) {
         log.info("返回ZRobot风控服务回调接口入参 userId= " + userId);
 
-//        JSONObject jsonObject1 = new JSONObject();
-//        //测试数据
-//        jsonObject1.put("userId", userId);
-//        jsonObject1.put("approveResult", "pass");
-//        jsonObject1.put("approveCredit", "5000");
         //通过userID查询数据
         String approveResute = jingDongService.selectByExample1(userId);
         Map<String, JSONObject> map = new HashMap<String, JSONObject>();
@@ -458,9 +456,6 @@ public class JingdongController {
             }
         } else {
             JSONObject result = new JSONObject();
-
-//            System.out.println("集合大小================="+certificationuserinfolist.size());
-
             String rs = StringUtils.strip(result.toJSONString(certificationuserinfolist.get(0)), "[]");
             data = JSONObject.parseObject(rs);
             data.put("idCardValidDate", data.getString("idCardValidDate").replace("~", "-"));
@@ -498,23 +493,41 @@ public class JingdongController {
             executorService.execute(new Runnable() {
                 @Override
                 public void run() {
-                    moXieController.getCarrierInfo(param);
+                    try {
+                        Thread.sleep(8000);
+//                        System.out.println("你好");
+                        moXieController.getCarrierInfo(param);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+
                 }
             });
         } else if (params.getString("type").equals("2")) {
             executorService.execute(new Runnable() {
                 @Override
                 public void run() {
-                    moXieController.getTaobaoInfo(param);
-                    moXieController.getTaobaoReport(param);
+
+                    try {
+                        Thread.sleep(8000);
+                        moXieController.getTaobaoInfo(param);
+                        moXieController.getTaobaoReport(param);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
             });
         } else if (params.getString("type").equals("3")) {
             executorService.execute(new Runnable() {
                 @Override
                 public void run() {
-                    moXieController.getCarrierReport(param);
-                    moXieController.getEducationInfo(param);
+                    try {
+                        Thread.sleep(8000);
+                        moXieController.getCarrierReport(param);
+                        moXieController.getEducationInfo(param);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
                 }
             });
         }

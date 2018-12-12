@@ -111,6 +111,7 @@ public class MoXieController {
         String idCard = cuil.getIdCard();
         String mobile = cuil.getMobile();
         try {
+            log.info("调用查询淘宝报告信息V4接口入参信息 https://api.51datakey.com/gateway/taobao/v4/report/ " + params.getString("taskId"));
             //淘宝报告原始数据
             result = httpUtil.sendGet(
                     "https://api.51datakey.com/gateway/taobao/v4/report/" + params.getString("taskId"),
